@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "30168724989",
+    "project_id": "bible-profecy",
+    "storage_bucket": "bible-profecy.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:30168724989:android:2a206fb199db17b1131594",
+        "android_client_info": {
+          "package_name": "com.wmma.bible_profecy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0W-Z6bHOCDXhNYjl-BMmx6Y1CpBejbwU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
