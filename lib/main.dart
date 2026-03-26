@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'services.dart';
 import 'home_shell.dart';
 import 'app_theme.dart';
 import 'app_locale.dart';
 import 'bible_version_service.dart';
+import 'auth_service.dart';
+import 'login_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,6 +33,9 @@ void main() async {
   }
 
   await AppTheme().init();
+
+  // Try to load existing user profile (non-blocking)
+  await AuthService().loadUserProfile();
 
   runApp(const BibleApp());
 }
@@ -64,7 +70,22 @@ class _BibleAppState extends State<BibleApp> {
       title: 'Bíblia | Daniel & Apocalipse',
       debugShowCheckedModeBanner: false,
       theme: AppTheme().themeData,
-      home: const HomeShell(),
+      home: StreamBuilder<User?>(
+        stream: AuthService().authStateChanges,
+        builder: (context, snapshot) {
+          // If logged in OR guest mode → HomeShell
+          if (snapshot.hasData || AuthService().isGuestMode) {
+            return const HomeShell();
+          }
+          // Not logged in → LoginPage
+          return LoginPage(
+            onGuestMode: () {
+              AuthService().isGuestMode = true;
+              setState(() {});
+            },
+          );
+        },
+      ),
     );
   }
 }

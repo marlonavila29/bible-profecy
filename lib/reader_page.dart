@@ -17,7 +17,11 @@ import 'bible_version_service.dart';
 import 'verse_comparison_sheet.dart';
 
 class ReaderPage extends StatefulWidget {
-  final void Function({required String url, required String title, String subtitle, bool isPodcast})? onPlayAudio;
+  final void Function(
+      {required String url,
+      required String title,
+      String subtitle,
+      bool isPodcast})? onPlayAudio;
   final VoidCallback? onStopAudio;
   final bool isGlobalAudioPlaying;
 
@@ -149,7 +153,8 @@ class ReaderPageState extends State<ReaderPage> {
     final text = _getSelectedText();
     Clipboard.setData(ClipboardData(text: text));
     if (mounted) {
-      AppFeedback.showSuccess(context, 'Texto copiado. Cole em qualquer app para compartilhar!');
+      AppFeedback.showSuccess(
+          context, 'Texto copiado. Cole em qualquer app para compartilhar!');
     }
     _clearSelection();
   }
@@ -159,7 +164,8 @@ class ReaderPageState extends State<ReaderPage> {
     for (final vn in _selectedVerses) {
       final key = '${book.name}_${currentChapterIndex}_$vn';
       var userData = DataService().userVerseData[key] ?? UserVerseData();
-      userData = UserVerseData(highlightColor: colorValue, personalNote: userData.personalNote);
+      userData = UserVerseData(
+          highlightColor: colorValue, personalNote: userData.personalNote);
       DataService().saveUserVerseData(key, userData);
     }
     setState(() {
@@ -176,6 +182,27 @@ class ReaderPageState extends State<ReaderPage> {
     final verse = chapter.firstWhere((v) => v.number == sorted.first);
     _clearSelection();
     _openPersonalNoteDialog(key, currentChapterIndex, verse);
+  }
+
+  void _toggleFavoriteSelected() {
+    final book = DataService().books[currentBookIndex];
+    // If any selected verse is NOT a favorite, toggle all ON; otherwise toggle all OFF
+    bool isTogglingOn = _selectedVerses.any((vn) {
+      final key = '${book.name}_${currentChapterIndex}_$vn';
+      return !(DataService().userVerseData[key]?.isFavorite ?? false);
+    });
+
+    for (final vn in _selectedVerses) {
+      final key = '${book.name}_${currentChapterIndex}_$vn';
+      final userData = DataService().userVerseData[key] ?? UserVerseData();
+      DataService().saveUserVerseData(key, userData.copyWith(isFavorite: isTogglingOn));
+    }
+
+    if (mounted) {
+      AppFeedback.showSuccess(context,
+          isTogglingOn ? 'Adicionado aos favoritos!' : 'Removido dos favoritos!');
+    }
+    _clearSelection();
   }
 
   @override
@@ -270,30 +297,195 @@ class ReaderPageState extends State<ReaderPage> {
 
   void _showWordMeaning(String word, DictEntry entry) {
     final t = AppTheme();
+    final refs = entry.references
+        .expand((e) => e.split(RegExp(r'[,;]')))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
     showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: t.surface,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(word.toUpperCase(), style: GoogleFonts.cinzel(color: AppTheme.accent, fontWeight: FontWeight.bold)),
-            if (entry.originalWord != null && entry.originalWord!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: Text(entry.originalWord!, style: GoogleFonts.lora(color: t.textTertiary, fontStyle: FontStyle.italic, fontSize: 16)),
+        context: context,
+        builder: (ctx) => AlertDialog(
+              backgroundColor: t.surface,
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(word.toUpperCase(),
+                      style: GoogleFonts.cinzel(
+                          color: AppTheme.accent, fontWeight: FontWeight.bold)),
+                  if (entry.originalWord != null &&
+                      entry.originalWord!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4.0),
+                      child: Text(entry.originalWord!,
+                          style: GoogleFonts.lora(
+                              color: t.textTertiary,
+                              fontStyle: FontStyle.italic,
+                              fontSize: 16)),
+                    ),
+                ],
               ),
-          ],
-        ),
-        content: Text(entry.meaning, style: TextStyle(fontSize: 17, color: t.textSecondary)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Fechar', style: TextStyle(color: AppTheme.accent)),
+              content: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(entry.meaning,
+                        style: TextStyle(fontSize: 17, color: t.textSecondary)),
+                    if (refs.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Divider(color: t.divider),
+                      const SizedBox(height: 8),
+                      Text('Referências',
+                          style: GoogleFonts.inter(
+                              color: t.textTertiary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5)),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: refs.map((ref) => GestureDetector(
+                          onTap: () => _fetchAndShowReferenceText(ref),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: AppTheme.accent.withOpacity(0.3)),
+                            ),
+                            child: Text(ref,
+                                style: GoogleFonts.inter(
+                                    color: AppTheme.accent,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500)),
+                          ),
+                        )).toList(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Fechar',
+                      style: TextStyle(color: AppTheme.accent)),
+                ),
+              ],
+            ));
+  }
+  void _showQuickVersionPicker() {
+    final t = AppTheme();
+    final bvs = BibleVersionService();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.surface,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.5,
+          minChildSize: 0.3,
+          maxChildSize: 0.8,
+          builder: (ctx, scrollCtrl) => Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 4),
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: t.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: Row(
+                  children: [
+                    Text('Versão da Bíblia',
+                        style: GoogleFonts.cinzel(
+                            color: t.titleGold,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    IconButton(
+                      icon: Icon(Icons.close, color: t.textTertiary, size: 20),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(color: t.divider, height: 1),
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: kBibleVersions.length,
+                  itemBuilder: (c, i) {
+                    final v = kBibleVersions[i];
+                    final isSelected = v.id == bvs.primaryVersionId;
+                    return ListTile(
+                      leading: Container(
+                        width: 44, height: 44,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppTheme.accent.withOpacity(0.15)
+                              : t.cardBg,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppTheme.accent.withOpacity(0.4)
+                                : t.border,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            v.shortName.length > 4
+                                ? v.shortName.substring(0, 3)
+                                : v.shortName,
+                            style: GoogleFonts.inter(
+                              color: isSelected ? AppTheme.accent : t.textTertiary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      title: Text(v.name,
+                          style: GoogleFonts.inter(
+                              color: t.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500)),
+                      subtitle: Text('${v.language} • ${v.shortName}',
+                          style: GoogleFonts.inter(
+                              color: t.textQuaternary, fontSize: 12)),
+                      trailing: isSelected
+                          ? const Icon(Icons.check_circle,
+                              color: AppTheme.accent, size: 22)
+                          : null,
+                      onTap: () async {
+                        await bvs.setPrimaryVersion(v.id);
+                        if (mounted) {
+                          Navigator.pop(context);
+                          _tryFetchApiChapter();
+                          setState(() {});
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
-      )
+        );
+      },
     );
   }
 
@@ -341,49 +533,116 @@ class ReaderPageState extends State<ReaderPage> {
     showModalBottomSheet(
       context: context,
       backgroundColor: t.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
               padding: const EdgeInsets.all(16.0),
-              child: Text('Opções: ${book.name} ${chapterIndex+1}:${verse.number}',
-                style: GoogleFonts.cinzel(fontSize: 18, color: t.titleGold, fontWeight: FontWeight.bold)),
+              child: Text(
+                  'Opções: ${book.name} ${chapterIndex + 1}:${verse.number}',
+                  style: GoogleFonts.cinzel(
+                      fontSize: 18,
+                      color: t.titleGold,
+                      fontWeight: FontWeight.bold)),
             ),
             ListTile(
-              leading: Icon(Icons.comment, color: opts.comments.isNotEmpty ? t.textPrimary : t.textQuaternary),
-              title: Text('Ver Comentários', style: TextStyle(color: opts.comments.isNotEmpty ? t.textPrimary : t.textQuaternary)),
+              leading: Icon(Icons.comment,
+                  color: opts.comments.isNotEmpty
+                      ? t.textPrimary
+                      : t.textQuaternary),
+              title: Text('Ver Comentários',
+                  style: TextStyle(
+                      color: opts.comments.isNotEmpty
+                          ? t.textPrimary
+                          : t.textQuaternary)),
               enabled: opts.comments.isNotEmpty,
-              onTap: opts.comments.isNotEmpty ? () { Navigator.pop(ctx); _showComments(book, chapterIndex, verse, opts.comments); } : null,
+              onTap: opts.comments.isNotEmpty
+                  ? () {
+                      Navigator.pop(ctx);
+                      _showComments(book, chapterIndex, verse, opts.comments);
+                    }
+                  : null,
             ),
             ListTile(
-              leading: Icon(Icons.image, color: opts.images.isNotEmpty ? t.textPrimary : t.textQuaternary),
-              title: Text('Ver Imagem', style: TextStyle(color: opts.images.isNotEmpty ? t.textPrimary : t.textQuaternary)),
+              leading: Icon(Icons.image,
+                  color: opts.images.isNotEmpty
+                      ? t.textPrimary
+                      : t.textQuaternary),
+              title: Text('Ver Imagem',
+                  style: TextStyle(
+                      color: opts.images.isNotEmpty
+                          ? t.textPrimary
+                          : t.textQuaternary)),
               enabled: opts.images.isNotEmpty,
-              onTap: opts.images.isNotEmpty ? () { Navigator.pop(ctx); _showMedia(opts.images, "Imagens"); } : null,
+              onTap: opts.images.isNotEmpty
+                  ? () {
+                      Navigator.pop(ctx);
+                      _showMedia(opts.images, "Imagens");
+                    }
+                  : null,
             ),
             ListTile(
-              leading: Icon(Icons.gif, color: opts.gifs.isNotEmpty ? t.textPrimary : t.textQuaternary),
-              title: Text('Ver GIF', style: TextStyle(color: opts.gifs.isNotEmpty ? t.textPrimary : t.textQuaternary)),
+              leading: Icon(Icons.gif,
+                  color:
+                      opts.gifs.isNotEmpty ? t.textPrimary : t.textQuaternary),
+              title: Text('Ver GIF',
+                  style: TextStyle(
+                      color: opts.gifs.isNotEmpty
+                          ? t.textPrimary
+                          : t.textQuaternary)),
               enabled: opts.gifs.isNotEmpty,
-              onTap: opts.gifs.isNotEmpty ? () { Navigator.pop(ctx); _showMedia(opts.gifs, "GIFs"); } : null,
+              onTap: opts.gifs.isNotEmpty
+                  ? () {
+                      Navigator.pop(ctx);
+                      _showMedia(opts.gifs, "GIFs");
+                    }
+                  : null,
             ),
             ListTile(
-              leading: Icon(Icons.library_books, color: opts.references.isNotEmpty ? t.textPrimary : t.textQuaternary),
-              title: Text('Ver Referências Cruzadas', style: TextStyle(color: opts.references.isNotEmpty ? t.textPrimary : t.textQuaternary)),
+              leading: Icon(Icons.library_books,
+                  color: opts.references.isNotEmpty
+                      ? t.textPrimary
+                      : t.textQuaternary),
+              title: Text('Ver Referências Cruzadas',
+                  style: TextStyle(
+                      color: opts.references.isNotEmpty
+                          ? t.textPrimary
+                          : t.textQuaternary)),
               enabled: opts.references.isNotEmpty,
-              onTap: opts.references.isNotEmpty ? () { Navigator.pop(ctx); _showReferences(opts.references); } : null,
+              onTap: opts.references.isNotEmpty
+                  ? () {
+                      Navigator.pop(ctx);
+                      _showReferences(opts.references);
+                    }
+                  : null,
             ),
             ListTile(
-              leading: Icon(Icons.video_library, color: (opts.youtubeUrl != null && opts.youtubeUrl!.isNotEmpty) ? t.textPrimary : t.textQuaternary),
-              title: Text('Ver Vídeo Explicativo', style: TextStyle(color: (opts.youtubeUrl != null && opts.youtubeUrl!.isNotEmpty) ? t.textPrimary : t.textQuaternary)),
+              leading: Icon(Icons.video_library,
+                  color:
+                      (opts.youtubeUrl != null && opts.youtubeUrl!.isNotEmpty)
+                          ? t.textPrimary
+                          : t.textQuaternary),
+              title: Text('Ver Vídeo Explicativo',
+                  style: TextStyle(
+                      color: (opts.youtubeUrl != null &&
+                              opts.youtubeUrl!.isNotEmpty)
+                          ? t.textPrimary
+                          : t.textQuaternary)),
               enabled: opts.youtubeUrl != null && opts.youtubeUrl!.isNotEmpty,
-              onTap: (opts.youtubeUrl != null && opts.youtubeUrl!.isNotEmpty) ? () { Navigator.pop(ctx); _showYoutubeDialog(opts.youtubeUrl!); } : null,
+              onTap: (opts.youtubeUrl != null && opts.youtubeUrl!.isNotEmpty)
+                  ? () {
+                      Navigator.pop(ctx);
+                      _showYoutubeDialog(opts.youtubeUrl!);
+                    }
+                  : null,
             ),
             ListTile(
               leading: Icon(Icons.compare_arrows_rounded, color: t.textPrimary),
-              title: Text('Comparar Versões', style: TextStyle(color: t.textPrimary)),
+              title: Text('Comparar Versões',
+                  style: TextStyle(color: t.textPrimary)),
               onTap: () {
                 Navigator.pop(ctx);
                 VerseComparisonSheet.show(
@@ -407,25 +666,37 @@ class ReaderPageState extends State<ReaderPage> {
     showModalBottomSheet(
       context: context,
       backgroundColor: t.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
               padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
-              child: Text('BÍBLIA DE ESTUDO (${verse.number})', style: GoogleFonts.cinzel(fontSize: 16, color: t.titleGold, fontWeight: FontWeight.bold)),
+              child: Text('BÍBLIA DE ESTUDO (${verse.number})',
+                  style: GoogleFonts.cinzel(
+                      fontSize: 16,
+                      color: t.titleGold,
+                      fontWeight: FontWeight.bold)),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Text('Cor de Destaque', style: GoogleFonts.inter(fontSize: 12, color: t.textTertiary, fontWeight: FontWeight.bold)),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Text('Cor de Destaque',
+                  style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: t.textTertiary,
+                      fontWeight: FontWeight.bold)),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _colorButton(key, null, Colors.transparent, Icons.format_color_reset),
+                  _colorButton(
+                      key, null, Colors.transparent, Icons.format_color_reset),
                   _colorButton(key, 0xFFFDE047, const Color(0xFFFDE047)),
                   _colorButton(key, 0xFF86EFAC, const Color(0xFF86EFAC)),
                   _colorButton(key, 0xFF93C5FD, const Color(0xFF93C5FD)),
@@ -435,8 +706,12 @@ class ReaderPageState extends State<ReaderPage> {
             ),
             ListTile(
               leading: Icon(Icons.edit_note, color: t.textPrimary),
-              title: Text('Minhas Anotações', style: TextStyle(color: t.textPrimary)),
-              onTap: () { Navigator.pop(ctx); _openPersonalNoteDialog(key, chapterIndex, verse); },
+              title: Text('Minhas Anotações',
+                  style: TextStyle(color: t.textPrimary)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _openPersonalNoteDialog(key, chapterIndex, verse);
+              },
             ),
           ],
         ),
@@ -446,59 +721,73 @@ class ReaderPageState extends State<ReaderPage> {
 
   void _saveHighlightColor(String key, int? color) {
     var userData = DataService().userVerseData[key] ?? UserVerseData();
-    userData = UserVerseData(highlightColor: color, personalNote: userData.personalNote);
+    userData = UserVerseData(
+        highlightColor: color, personalNote: userData.personalNote);
     DataService().saveUserVerseData(key, userData);
     setState(() {});
   }
 
   void _openPersonalNoteDialog(String key, int chapterIndex, Verse verse) {
     var userData = DataService().userVerseData[key] ?? UserVerseData();
-    TextEditingController ctrl = TextEditingController(text: userData.personalNote);
+    TextEditingController ctrl =
+        TextEditingController(text: userData.personalNote);
     final t = AppTheme();
 
     showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: t.surface,
-        title: Text('Minha Anotação (${verse.number})', style: GoogleFonts.cinzel(color: AppTheme.accent)),
-        content: TextField(
-          controller: ctrl,
-          maxLines: 5,
-          style: TextStyle(color: t.textPrimary),
-          decoration: InputDecoration(
-            hintText: "Escreva suas anotações pessoais aqui...",
-            hintStyle: TextStyle(color: t.textQuaternary),
-            filled: true,
-            fillColor: t.cardBg,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancelar', style: TextStyle(color: t.textTertiary))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent, foregroundColor: Colors.black),
-            onPressed: () {
-              final newNote = ctrl.text.trim().isEmpty ? null : ctrl.text.trim();
-              userData = UserVerseData(highlightColor: userData.highlightColor, personalNote: newNote);
-              DataService().saveUserVerseData(key, userData);
-              setState(() {});
-              Navigator.pop(ctx);
-            },
-            child: const Text('Salvar', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      )
-    );
+        context: context,
+        builder: (ctx) => AlertDialog(
+              backgroundColor: t.surface,
+              title: Text('Minha Anotação (${verse.number})',
+                  style: GoogleFonts.cinzel(color: AppTheme.accent)),
+              content: TextField(
+                controller: ctrl,
+                maxLines: 5,
+                style: TextStyle(color: t.textPrimary),
+                decoration: InputDecoration(
+                  hintText: "Escreva suas anotações pessoais aqui...",
+                  hintStyle: TextStyle(color: t.textQuaternary),
+                  filled: true,
+                  fillColor: t.cardBg,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text('Cancelar',
+                        style: TextStyle(color: t.textTertiary))),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.accent,
+                      foregroundColor: Colors.black),
+                  onPressed: () {
+                    final newNote =
+                        ctrl.text.trim().isEmpty ? null : ctrl.text.trim();
+                    userData = UserVerseData(
+                        highlightColor: userData.highlightColor,
+                        personalNote: newNote);
+                    DataService().saveUserVerseData(key, userData);
+                    setState(() {});
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Salvar',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ));
   }
 
-  Widget _colorButton(String key, int? colorValue, Color color, [IconData? icon]) {
+  Widget _colorButton(String key, int? colorValue, Color color,
+      [IconData? icon]) {
     return GestureDetector(
       onTap: () {
         _saveHighlightColor(key, colorValue);
         Navigator.pop(context);
       },
       child: Container(
-        width: 36, height: 36,
+        width: 36,
+        height: 36,
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
@@ -509,74 +798,92 @@ class ReaderPageState extends State<ReaderPage> {
     );
   }
 
-  void _showComments(Book book, int chapterIndex, Verse verse, List<Comment> comments) {
+  void _showComments(
+      Book book, int chapterIndex, Verse verse, List<Comment> comments) {
     int selectedIndex = 0;
     final t = AppTheme();
     showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            backgroundColor: t.surface,
-            contentPadding: EdgeInsets.zero,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Text('Comentários (${book.name} ${chapterIndex+1}:${verse.number})', style: GoogleFonts.cinzel(color: AppTheme.accent)),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (comments.length > 1) ...[
-                    SizedBox(
-                      height: 50,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                        itemCount: comments.length,
-                        itemBuilder: (c, i) => Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: ChoiceChip(
-                            label: Text(comments[i].author, style: const TextStyle(fontWeight: FontWeight.bold)),
-                            selected: selectedIndex == i,
-                            onSelected: (val) {
-                              if (val) setState(() => selectedIndex = i);
-                            },
-                            selectedColor: AppTheme.accent,
-                            backgroundColor: Colors.white10,
-                            labelStyle: TextStyle(color: selectedIndex == i ? Colors.black : Colors.white70),
+        context: context,
+        builder: (ctx) => StatefulBuilder(builder: (context, setState) {
+              return AlertDialog(
+                backgroundColor: t.surface,
+                contentPadding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                title: Text(
+                    'Comentários (${book.name} ${chapterIndex + 1}:${verse.number})',
+                    style: GoogleFonts.cinzel(color: AppTheme.accent)),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (comments.length > 1) ...[
+                        SizedBox(
+                          height: 50,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 8),
+                            itemCount: comments.length,
+                            itemBuilder: (c, i) => Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: ChoiceChip(
+                                label: Text(comments[i].author,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold)),
+                                selected: selectedIndex == i,
+                                onSelected: (val) {
+                                  if (val) setState(() => selectedIndex = i);
+                                },
+                                selectedColor: AppTheme.accent,
+                                backgroundColor: Colors.white10,
+                                labelStyle: TextStyle(
+                                    color: selectedIndex == i
+                                        ? Colors.black
+                                        : Colors.white70),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Divider(color: t.divider, height: 1),
+                      ],
+                      Flexible(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (comments.length == 1)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Text(comments[0].author,
+                                      style: TextStyle(
+                                          color: AppTheme.accentLight,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18)),
+                                ),
+                              Text(comments[selectedIndex].text,
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      color: t.textSecondary,
+                                      height: 1.5)),
+                            ],
                           ),
                         ),
                       ),
-                    ),
-                    Divider(color: t.divider, height: 1),
-                  ],
-                  Flexible(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (comments.length == 1)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Text(comments[0].author, style: TextStyle(color: AppTheme.accentLight, fontWeight: FontWeight.bold, fontSize: 18)),
-                            ),
-                          Text(comments[selectedIndex].text, style: TextStyle(fontSize: 16, color: t.textSecondary, height: 1.5)),
-                        ],
-                      ),
-                    ),
+                    ],
                   ),
+                ),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Fechar',
+                          style: TextStyle(color: AppTheme.accent))),
                 ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar', style: TextStyle(color: AppTheme.accent))),
-            ],
-          );
-        }
-      )
-    );
+              );
+            }));
   }
 
   String _getDirectMediaUrl(String url) {
@@ -590,81 +897,110 @@ class ReaderPageState extends State<ReaderPage> {
   }
 
   void _showMedia(List<String> urls, String title) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(title: Text(title, style: GoogleFonts.cinzel(color: AppTheme.accent)), backgroundColor: Colors.black),
-      body: PageView.builder(
-        itemCount: urls.length,
-        itemBuilder: (ctx, i) => InteractiveViewer(
-          child: Image.network(
-            _getDirectMediaUrl(urls[i]),
-            fit: BoxFit.contain,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Center(
-                child: CircularProgressIndicator(
-                  value: loadingProgress.expectedTotalBytes != null
-                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                      : null,
-                  valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.accent),
-                ),
-              );
-            },
-            errorBuilder: (c, e, s) => const Center(child: Text("Erro ao carregar mídia.", style: TextStyle(color: Colors.red)))
-          )
-        ),
-      ),
-    )));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => Scaffold(
+                  backgroundColor: Colors.black,
+                  appBar: AppBar(
+                      title: Text(title,
+                          style: GoogleFonts.cinzel(color: AppTheme.accent)),
+                      backgroundColor: Colors.black),
+                  body: PageView.builder(
+                    itemCount: urls.length,
+                    itemBuilder: (ctx, i) => InteractiveViewer(
+                        child: Image.network(_getDirectMediaUrl(urls[i]),
+                            fit: BoxFit.contain,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Center(
+                                child: CircularProgressIndicator(
+                                  value: loadingProgress.expectedTotalBytes !=
+                                          null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                          AppTheme.accent),
+                                ),
+                              );
+                            },
+                            errorBuilder: (c, e, s) => const Center(
+                                child: Text("Erro ao carregar mídia.",
+                                    style: TextStyle(color: Colors.red))))),
+                  ),
+                )));
   }
 
   void _showReferences(List<String> refs) {
-    final safeRefs = refs.expand((e) => e.split(RegExp(r'[,;]'))).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final safeRefs = refs
+        .expand((e) => e.split(RegExp(r'[,;]')))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
     final t = AppTheme();
 
     showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: t.surface,
-        title: Text('Referências Cruzadas', style: GoogleFonts.cinzel(color: AppTheme.accent)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: safeRefs.length,
-            itemBuilder: (c, i) => ListTile(
-              title: Text(safeRefs[i], style: const TextStyle(color: Colors.blueAccent, decoration: TextDecoration.underline)),
-              onTap: () => _fetchAndShowReferenceText(safeRefs[i]),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar', style: TextStyle(color: AppTheme.accent))),
-        ],
-      )
-    );
+        context: context,
+        builder: (ctx) => AlertDialog(
+              backgroundColor: t.surface,
+              title: Text('Referências Cruzadas',
+                  style: GoogleFonts.cinzel(color: AppTheme.accent)),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: safeRefs.length,
+                  itemBuilder: (c, i) => ListTile(
+                    title: Text(safeRefs[i],
+                        style: const TextStyle(
+                            color: Colors.blueAccent,
+                            decoration: TextDecoration.underline)),
+                    onTap: () => _fetchAndShowReferenceText(safeRefs[i]),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Fechar',
+                        style: TextStyle(color: AppTheme.accent))),
+              ],
+            ));
   }
 
   Future<void> _fetchAndShowReferenceText(String ref) async {
-    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+    showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()));
     try {
       final safeRef = Uri.encodeComponent(ref);
-      final response = await http.get(Uri.parse('https://bible-api.com/$safeRef?translation=almeida'));
+      final response = await http
+          .get(Uri.parse('https://bible-api.com/$safeRef?translation=almeida'));
       if (mounted) Navigator.pop(context);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (mounted) {
           final t = AppTheme();
           showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              backgroundColor: t.surface,
-              title: Text(data['reference'] ?? ref, style: GoogleFonts.cinzel(color: AppTheme.accent)),
-              content: SingleChildScrollView(child: Text(data['text'] ?? '', style: TextStyle(fontSize: 16, color: t.textSecondary))),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar', style: TextStyle(color: AppTheme.accent))),
-              ],
-            )
-          );
+              context: context,
+              builder: (ctx) => AlertDialog(
+                    backgroundColor: t.surface,
+                    title: Text(data['reference'] ?? ref,
+                        style: GoogleFonts.cinzel(color: AppTheme.accent)),
+                    content: SingleChildScrollView(
+                        child: Text(data['text'] ?? '',
+                            style: TextStyle(
+                                fontSize: 16, color: t.textSecondary))),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Fechar',
+                              style: TextStyle(color: AppTheme.accent))),
+                    ],
+                  ));
         }
       } else {
         throw Exception("Failed to load");
@@ -672,7 +1008,8 @@ class ReaderPageState extends State<ReaderPage> {
     } catch (_) {
       if (mounted) Navigator.pop(context);
       if (mounted) {
-        AppFeedback.showError(context, "Erro ao buscar referência. Verifique formato (ex: Genesis 1:1)");
+        AppFeedback.showError(context,
+            "Erro ao buscar referência. Verifique formato (ex: Genesis 1:1)");
       }
     }
   }
@@ -684,33 +1021,37 @@ class ReaderPageState extends State<ReaderPage> {
     } else if (url.contains('youtu.be/')) {
       videoId = url.split('youtu.be/')[1].split('?')[0];
     }
-    final thumbUrl = videoId != null ? "https://img.youtube.com/vi/$videoId/0.jpg" : "";
+    final thumbUrl =
+        videoId != null ? "https://img.youtube.com/vi/$videoId/0.jpg" : "";
     final t = AppTheme();
 
     showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: t.surface,
-        title: Text('Vídeo Explicativo', style: GoogleFonts.cinzel(color: AppTheme.accent)),
-        content: GestureDetector(
-          onTap: () {
-            Navigator.pop(ctx);
-            _openYouTube(url);
-          },
-          child: videoId != null
-            ? Stack(
-                alignment: Alignment.center,
-                children: [
-                   Image.network(thumbUrl, fit: BoxFit.cover),
-                   const Icon(Icons.play_circle_fill, size: 60, color: Colors.red),
-                ])
-            : Text("Tocar vídeo no YouTube", style: TextStyle(color: t.textPrimary, fontSize: 16)),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar', style: TextStyle(color: AppTheme.accent))),
-        ],
-      )
-    );
+        context: context,
+        builder: (ctx) => AlertDialog(
+              backgroundColor: t.surface,
+              title: Text('Vídeo Explicativo',
+                  style: GoogleFonts.cinzel(color: AppTheme.accent)),
+              content: GestureDetector(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openYouTube(url);
+                },
+                child: videoId != null
+                    ? Stack(alignment: Alignment.center, children: [
+                        Image.network(thumbUrl, fit: BoxFit.cover),
+                        const Icon(Icons.play_circle_fill,
+                            size: 60, color: Colors.red),
+                      ])
+                    : Text("Tocar vídeo no YouTube",
+                        style: TextStyle(color: t.textPrimary, fontSize: 16)),
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancelar',
+                        style: TextStyle(color: AppTheme.accent))),
+              ],
+            ));
   }
 
   void _openYouTube(String url) async {
@@ -718,13 +1059,15 @@ class ReaderPageState extends State<ReaderPage> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     } else {
-      if (mounted) AppFeedback.showError(context, 'Não foi possível abrir o link');
+      if (mounted)
+        AppFeedback.showError(context, 'Não foi possível abrir o link');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if(DataService().books.isEmpty) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (DataService().books.isEmpty)
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     final t = AppTheme();
     final loc = AppLocale();
@@ -738,12 +1081,11 @@ class ReaderPageState extends State<ReaderPage> {
       backgroundColor: t.bg,
       body: Container(
         decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: const Alignment(0, -0.6),
-            radius: 1.2,
-            colors: [t.surface, t.bg],
-          )
-        ),
+            gradient: RadialGradient(
+          center: const Alignment(0, -0.6),
+          radius: 1.2,
+          colors: [t.surface, t.bg],
+        )),
         child: SafeArea(
           child: Column(
             children: [
@@ -752,13 +1094,17 @@ class ReaderPageState extends State<ReaderPage> {
                 padding: const EdgeInsets.only(top: 8, bottom: 4),
                 child: Text(
                   loc.tr_appTitle,
-                  style: GoogleFonts.cinzel(fontSize: 22, fontWeight: FontWeight.bold, color: t.titleGold),
+                  style: GoogleFonts.cinzel(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: t.titleGold),
                 ),
               ),
 
               // ── Top Nav (Book + Chapter) ──
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   children: [
                     Expanded(
@@ -774,8 +1120,10 @@ class ReaderPageState extends State<ReaderPage> {
                             value: currentBookIndex,
                             isExpanded: true,
                             dropdownColor: t.surface,
-                            icon: const Icon(Icons.arrow_drop_down, color: AppTheme.accent),
-                            style: GoogleFonts.inter(fontSize: 16, color: t.textPrimary),
+                            icon: const Icon(Icons.arrow_drop_down,
+                                color: AppTheme.accent),
+                            style: GoogleFonts.inter(
+                                fontSize: 16, color: t.textPrimary),
                             onChanged: (val) {
                               if (val != null) {
                                 setState(() {
@@ -788,7 +1136,8 @@ class ReaderPageState extends State<ReaderPage> {
                               }
                             },
                             items: List.generate(books.length, (idx) {
-                              return DropdownMenuItem(value: idx, child: Text(books[idx].name));
+                              return DropdownMenuItem(
+                                  value: idx, child: Text(books[idx].name));
                             }),
                           ),
                         ),
@@ -808,8 +1157,10 @@ class ReaderPageState extends State<ReaderPage> {
                             value: currentChapterIndex,
                             isExpanded: true,
                             dropdownColor: t.surface,
-                            icon: const Icon(Icons.arrow_drop_down, color: AppTheme.accent),
-                            style: GoogleFonts.inter(fontSize: 16, color: t.textPrimary),
+                            icon: const Icon(Icons.arrow_drop_down,
+                                color: AppTheme.accent),
+                            style: GoogleFonts.inter(
+                                fontSize: 16, color: t.textPrimary),
                             onChanged: (val) {
                               if (val != null) {
                                 setState(() {
@@ -821,7 +1172,9 @@ class ReaderPageState extends State<ReaderPage> {
                               }
                             },
                             items: List.generate(book.chapters.length, (idx) {
-                              return DropdownMenuItem(value: idx, child: Text('${loc.tr_chapter} ${idx + 1}'));
+                              return DropdownMenuItem(
+                                  value: idx,
+                                  child: Text('${loc.tr_chapter} ${idx + 1}'));
                             }),
                           ),
                         ),
@@ -839,19 +1192,36 @@ class ReaderPageState extends State<ReaderPage> {
                     Text(
                       '${book.name} ${currentChapterIndex + 1}',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.cinzel(fontSize: 28, fontWeight: FontWeight.w600, color: t.textPrimary),
+                      style: GoogleFonts.cinzel(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w600,
+                          color: t.textPrimary),
                     ),
                     const SizedBox(height: 4),
-                    // Bible version badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: AppTheme.accent.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        bvs.primaryVersion.shortName,
-                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.accent, fontWeight: FontWeight.w700),
+                    // Bible version badge — tappable to change version
+                    GestureDetector(
+                      onTap: () => _showQuickVersionPicker(),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              bvs.primaryVersion.shortName,
+                              style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  color: AppTheme.accent,
+                                  fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(Icons.expand_more, size: 14, color: AppTheme.accent),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -864,18 +1234,70 @@ class ReaderPageState extends State<ReaderPage> {
               // ── Selection Toolbar ──
               if (_isSelecting)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   color: AppTheme.accent.withOpacity(0.1),
                   child: Row(
                     children: [
-                      Text('${_selectedVerses.length} selecionados', style: GoogleFonts.inter(color: AppTheme.accent, fontWeight: FontWeight.w600, fontSize: 13)),
+                      Text('${_selectedVerses.length} selecionados',
+                          style: GoogleFonts.inter(
+                              color: AppTheme.accent,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13)),
                       const Spacer(),
-                      IconButton(icon: const Icon(Icons.copy, size: 20), color: AppTheme.accent, onPressed: _copySelected, tooltip: 'Copiar'),
-                      IconButton(icon: const Icon(Icons.share, size: 20), color: AppTheme.accent, onPressed: _shareSelected, tooltip: 'Compartilhar'),
-                      IconButton(icon: Icon(_showColorPalette ? Icons.palette : Icons.palette_outlined, size: 20), color: AppTheme.accent,
-                        onPressed: () => setState(() => _showColorPalette = !_showColorPalette), tooltip: 'Destacar'),
-                      IconButton(icon: const Icon(Icons.select_all, size: 20), color: AppTheme.accent, onPressed: _selectAllVerses, tooltip: 'Selecionar todos'),
-                      IconButton(icon: const Icon(Icons.close, size: 20), color: t.textTertiary, onPressed: _clearSelection),
+                      IconButton(
+                          icon: const Icon(Icons.copy, size: 20),
+                          color: AppTheme.accent,
+                          onPressed: _copySelected,
+                          tooltip: 'Copiar'),
+                      IconButton(
+                          icon: const Icon(Icons.share, size: 20),
+                          color: AppTheme.accent,
+                          onPressed: _shareSelected,
+                          tooltip: 'Compartilhar'),
+                      // ── Favorite ──
+                      Builder(builder: (ctx) {
+                        final book = DataService().books[currentBookIndex];
+                        final allFav = _selectedVerses.every((vn) {
+                          final k = '${book.name}_${currentChapterIndex}_$vn';
+                          return DataService().userVerseData[k]?.isFavorite ?? false;
+                        });
+                        return IconButton(
+                          icon: Icon(
+                            allFav ? Icons.favorite : Icons.favorite_border,
+                            size: 20,
+                            color: allFav ? Colors.redAccent : AppTheme.accent,
+                          ),
+                          onPressed: _toggleFavoriteSelected,
+                          tooltip: allFav ? 'Remover favorito' : 'Favoritar',
+                        );
+                      }),
+                      // ── Note (single verse only) ──
+                      if (_selectedVerses.length == 1)
+                        IconButton(
+                            icon: const Icon(Icons.note_add, size: 20),
+                            color: AppTheme.accent,
+                            onPressed: _addNoteToSelectedVerses,
+                            tooltip: 'Adicionar anotação'),
+                      IconButton(
+                          icon: Icon(
+                              _showColorPalette
+                                  ? Icons.palette
+                                  : Icons.palette_outlined,
+                              size: 20),
+                          color: AppTheme.accent,
+                          onPressed: () => setState(
+                              () => _showColorPalette = !_showColorPalette),
+                          tooltip: 'Destacar'),
+                      IconButton(
+                          icon: const Icon(Icons.select_all, size: 20),
+                          color: AppTheme.accent,
+                          onPressed: _selectAllVerses,
+                          tooltip: 'Selecionar todos'),
+                      IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          color: t.textTertiary,
+                          onPressed: _clearSelection),
                     ],
                   ),
                 ),
@@ -886,7 +1308,8 @@ class ReaderPageState extends State<ReaderPage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _selectionColorBtn(null, Colors.transparent, Icons.format_color_reset),
+                      _selectionColorBtn(
+                          null, Colors.transparent, Icons.format_color_reset),
                       _selectionColorBtn(0xFFFDE047, const Color(0xFFFDE047)),
                       _selectionColorBtn(0xFF86EFAC, const Color(0xFF86EFAC)),
                       _selectionColorBtn(0xFF93C5FD, const Color(0xFF93C5FD)),
@@ -897,9 +1320,11 @@ class ReaderPageState extends State<ReaderPage> {
 
               // ── Audio/Podcast icons row (TOP) ──
               Builder(builder: (_) {
-                final chapterAudioUrl = DataService().getChapterAudio(book.name, currentChapterIndex);
+                final chapterAudioUrl = DataService()
+                    .getChapterAudio(book.name, currentChapterIndex);
                 final hasPodcasts = DataService().podcasts.isNotEmpty;
-                if (chapterAudioUrl == null && !hasPodcasts) return const SizedBox.shrink();
+                if (chapterAudioUrl == null && !hasPodcasts)
+                  return const SizedBox.shrink();
                 return Column(
                   children: [
                     Padding(
@@ -912,14 +1337,17 @@ class ReaderPageState extends State<ReaderPage> {
                               icon: Icons.headphones_rounded,
                               label: 'Audio do cap.',
                               color: AppTheme.accent,
-                              isActive: widget.isGlobalAudioPlaying && !_showPodcasts,
+                              isActive:
+                                  widget.isGlobalAudioPlaying && !_showPodcasts,
                               onTap: () {
-                                if (widget.isGlobalAudioPlaying && !_showPodcasts) {
+                                if (widget.isGlobalAudioPlaying &&
+                                    !_showPodcasts) {
                                   widget.onStopAudio?.call();
                                 } else {
                                   widget.onPlayAudio?.call(
                                     url: chapterAudioUrl,
-                                    title: '${book.name} ${currentChapterIndex + 1}',
+                                    title:
+                                        '${book.name} ${currentChapterIndex + 1}',
                                     subtitle: 'Audio do capitulo',
                                   );
                                 }
@@ -947,15 +1375,25 @@ class ReaderPageState extends State<ReaderPage> {
                       Container(
                         constraints: const BoxConstraints(maxHeight: 160),
                         child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 4),
                           itemCount: DataService().podcasts.length,
                           itemBuilder: (ctx, i) {
                             final p = DataService().podcasts[i];
                             return ListTile(
                               dense: true,
-                              leading: const Icon(Icons.play_circle_fill, color: Color(0xFF8B5CF6), size: 28),
-                              title: Text(p['title'] ?? '', style: GoogleFonts.inter(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                              subtitle: Text(p['description'] ?? '', style: GoogleFonts.inter(color: t.textTertiary, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                              leading: const Icon(Icons.play_circle_fill,
+                                  color: Color(0xFF8B5CF6), size: 28),
+                              title: Text(p['title'] ?? '',
+                                  style: GoogleFonts.inter(
+                                      color: t.textPrimary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                              subtitle: Text(p['description'] ?? '',
+                                  style: GoogleFonts.inter(
+                                      color: t.textTertiary, fontSize: 11),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
                               onTap: () {
                                 widget.onPlayAudio?.call(
                                   url: p['url'] ?? '',
@@ -975,7 +1413,9 @@ class ReaderPageState extends State<ReaderPage> {
               // ── Verses ──
               Expanded(
                 child: _apiLoading
-                    ? Center(child: CircularProgressIndicator(color: AppTheme.accent))
+                    ? Center(
+                        child:
+                            CircularProgressIndicator(color: AppTheme.accent))
                     : ListView(
                         padding: const EdgeInsets.all(20.0),
                         children: [
@@ -986,8 +1426,10 @@ class ReaderPageState extends State<ReaderPage> {
                               child: TextButton.icon(
                                 onPressed: _backToSearch,
                                 icon: const Icon(Icons.arrow_back, size: 16),
-                                label: Text(loc.tr_backToSearch, style: const TextStyle(fontSize: 13)),
-                                style: TextButton.styleFrom(foregroundColor: AppTheme.accent),
+                                label: Text(loc.tr_backToSearch,
+                                    style: const TextStyle(fontSize: 13)),
+                                style: TextButton.styleFrom(
+                                    foregroundColor: AppTheme.accent),
                               ),
                             ),
 
@@ -999,18 +1441,22 @@ class ReaderPageState extends State<ReaderPage> {
                               child: VerseCard(
                                 verseKey: key,
                                 verse: verse,
-                                isHighlightedFromSearch: _highlightVerseNumber == verse.number,
-                                isSelected: _selectedVerses.contains(verse.number),
-                                onTap: () => _toggleVerseSelection(verse.number),
+                                isHighlightedFromSearch:
+                                    _highlightVerseNumber == verse.number,
+                                isSelected:
+                                    _selectedVerses.contains(verse.number),
+                                onTap: () =>
+                                    _toggleVerseSelection(verse.number),
                                 onShowWordMeaning: _showWordMeaning,
-                                onOptionsTap: () =>
-                                    _showVerseOptions(book, currentChapterIndex, verse),
+                                onOptionsTap: () => _showVerseOptions(
+                                    book, currentChapterIndex, verse),
                                 onLongPress: () => _isSelecting
                                     ? _toggleVerseSelection(verse.number)
                                     : _showPersonalStudyOptions(
                                         book, currentChapterIndex, verse),
                                 onCompare: () {
-                                  VerseComparisonSheet.show(context,
+                                  VerseComparisonSheet.show(
+                                    context,
                                     bookName: book.name,
                                     chapter: currentChapterIndex + 1,
                                     verse: verse.number,
@@ -1024,10 +1470,10 @@ class ReaderPageState extends State<ReaderPage> {
                       ),
               ),
 
-
               // ── Bottom Nav ──
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
                 decoration: BoxDecoration(
                   border: Border(top: BorderSide(color: t.divider)),
                   color: t.appBar,
@@ -1036,25 +1482,37 @@ class ReaderPageState extends State<ReaderPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     TextButton.icon(
-                      onPressed: (currentBookIndex == 0 && currentChapterIndex == 0) ? null : _prevChapter,
+                      onPressed:
+                          (currentBookIndex == 0 && currentChapterIndex == 0)
+                              ? null
+                              : _prevChapter,
                       icon: const Icon(Icons.chevron_left),
-                      label: Text(loc.tr_previous, style: const TextStyle(fontSize: 14)),
-                      style: TextButton.styleFrom(foregroundColor: AppTheme.accent, disabledForegroundColor: t.textQuaternary),
+                      label: Text(loc.tr_previous,
+                          style: const TextStyle(fontSize: 14)),
+                      style: TextButton.styleFrom(
+                          foregroundColor: AppTheme.accent,
+                          disabledForegroundColor: t.textQuaternary),
                     ),
                     Text(
                       '${book.abbrev} ${currentChapterIndex + 1}',
-                      style: GoogleFonts.inter(fontSize: 13, color: t.textTertiary, fontWeight: FontWeight.w500),
+                      style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: t.textTertiary,
+                          fontWeight: FontWeight.w500),
                     ),
                     TextButton(
                       onPressed: (currentBookIndex == books.length - 1 &&
                               currentChapterIndex == book.chapters.length - 1)
                           ? null
                           : _nextChapter,
-                      style: TextButton.styleFrom(foregroundColor: AppTheme.accent, disabledForegroundColor: t.textQuaternary),
+                      style: TextButton.styleFrom(
+                          foregroundColor: AppTheme.accent,
+                          disabledForegroundColor: t.textQuaternary),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(loc.tr_next, style: const TextStyle(fontSize: 14)),
+                          Text(loc.tr_next,
+                              style: const TextStyle(fontSize: 14)),
                           const SizedBox(width: 4),
                           const Icon(Icons.chevron_right),
                         ],
@@ -1074,7 +1532,8 @@ class ReaderPageState extends State<ReaderPage> {
     return GestureDetector(
       onTap: () => _highlightSelectedVerses(colorValue),
       child: Container(
-        width: 36, height: 36,
+        width: 36,
+        height: 36,
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
@@ -1120,7 +1579,9 @@ class _AudioIconButton extends StatelessWidget {
           children: [
             Icon(icon, size: 18, color: color),
             const SizedBox(width: 6),
-            Text(label, style: GoogleFonts.inter(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+            Text(label,
+                style: GoogleFonts.inter(
+                    fontSize: 12, color: color, fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -1180,17 +1641,22 @@ class _VerseCardState extends State<VerseCard> {
           style: GoogleFonts.lora(
             fontSize: 20 * t.fontSizeScale,
             color: hasMeaning ? AppTheme.accent : t.textPrimary,
-            decoration: hasMeaning ? TextDecoration.underline : TextDecoration.none,
+            decoration:
+                hasMeaning ? TextDecoration.underline : TextDecoration.none,
             decorationStyle: TextDecorationStyle.dashed,
           ),
-          recognizer: hasMeaning ? (TapGestureRecognizer()..onTap = () {
-             widget.onShowWordMeaning(part, dict[cleanWord]!);
-          }) : null,
+          recognizer: hasMeaning
+              ? (TapGestureRecognizer()
+                ..onTap = () {
+                  widget.onShowWordMeaning(part, dict[cleanWord]!);
+                })
+              : null,
         );
       } else {
         return TextSpan(
           text: part,
-          style: GoogleFonts.lora(fontSize: 20 * t.fontSizeScale, color: t.textPrimary),
+          style: GoogleFonts.lora(
+              fontSize: 20 * t.fontSizeScale, color: t.textPrimary),
         );
       }
     }).toList();
@@ -1223,13 +1689,15 @@ class _VerseCardState extends State<VerseCard> {
         } else {
           return TextSpan(
             text: part,
-            style: GoogleFonts.lora(fontSize: 20 * t.fontSizeScale, color: t.textTertiary),
+            style: GoogleFonts.lora(
+                fontSize: 20 * t.fontSizeScale, color: t.textTertiary),
           );
         }
       } else {
         return TextSpan(
           text: part,
-          style: GoogleFonts.lora(fontSize: 20 * t.fontSizeScale, color: t.textTertiary),
+          style: GoogleFonts.lora(
+              fontSize: 20 * t.fontSizeScale, color: t.textTertiary),
         );
       }
     }).toList();
@@ -1283,9 +1751,14 @@ class _VerseCardState extends State<VerseCard> {
                       children: [
                         TextSpan(
                           text: '${widget.verse.number}  ',
-                          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.accent),
+                          style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.accent),
                         ),
-                        ...isBack ? _buildBackSpans(widget.verse.text) : _buildFrontSpans(widget.verse.text),
+                        ...isBack
+                            ? _buildBackSpans(widget.verse.text)
+                            : _buildFrontSpans(widget.verse.text),
                       ],
                     ),
                     textAlign: TextAlign.left,
@@ -1296,7 +1769,8 @@ class _VerseCardState extends State<VerseCard> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      icon: Icon(Icons.more_vert, color: t.textQuaternary, size: 22),
+                      icon: Icon(Icons.more_vert,
+                          color: t.textQuaternary, size: 22),
                       onPressed: widget.onOptionsTap,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -1306,17 +1780,22 @@ class _VerseCardState extends State<VerseCard> {
                     IconButton(
                       icon: Icon(
                         isFlipped ? Icons.flip_to_front : Icons.flip_to_back,
-                        color: isLiteral ? const Color(0xFF22C55E) : (isFlipped ? AppTheme.accent : t.textQuaternary),
+                        color: isLiteral
+                            ? const Color(0xFF22C55E)
+                            : (isFlipped ? AppTheme.accent : t.textQuaternary),
                         size: 20,
                       ),
                       onPressed: () => _toggleInterpretation(isLiteral),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
-                      tooltip: isLiteral ? 'Verso literal' : (isFlipped ? 'Ver original' : 'Interpretar'),
+                      tooltip: isLiteral
+                          ? 'Verso literal'
+                          : (isFlipped ? 'Ver original' : 'Interpretar'),
                     ),
                     const SizedBox(height: 10),
                     IconButton(
-                      icon: Icon(Icons.compare_arrows, color: t.textQuaternary, size: 20),
+                      icon: Icon(Icons.compare_arrows,
+                          color: t.textQuaternary, size: 20),
                       onPressed: widget.onCompare,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -1335,19 +1814,29 @@ class _VerseCardState extends State<VerseCard> {
                 color: const Color(0xFF22C55E).withOpacity(0.1),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Text('✓ Verso literal', style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF22C55E), fontWeight: FontWeight.w600)),
+              child: Text('✓ Verso literal',
+                  style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: const Color(0xFF22C55E),
+                      fontWeight: FontWeight.w600)),
             ),
-          if (userData?.personalNote != null && userData!.personalNote!.isNotEmpty)
-             Container(
-               margin: const EdgeInsets.only(top: 4, bottom: 12, left: 12, right: 12),
-               padding: const EdgeInsets.all(12),
-               decoration: BoxDecoration(
-                 color: t.cardBg,
-                 borderRadius: BorderRadius.circular(8),
-                 border: const Border(left: BorderSide(color: AppTheme.accent, width: 2))
-               ),
-               child: Text(userData!.personalNote!, style: GoogleFonts.lora(fontSize: 15, color: t.textSecondary, fontStyle: FontStyle.italic)),
-             ),
+          if (userData?.personalNote != null &&
+              userData!.personalNote!.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(
+                  top: 4, bottom: 12, left: 12, right: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: t.cardBg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: const Border(
+                      left: BorderSide(color: AppTheme.accent, width: 2))),
+              child: Text(userData.personalNote!,
+                  style: GoogleFonts.lora(
+                      fontSize: 15,
+                      color: t.textSecondary,
+                      fontStyle: FontStyle.italic)),
+            ),
         ],
       ),
     );
@@ -1357,7 +1846,8 @@ class _VerseCardState extends State<VerseCard> {
     if (isLiteral) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Este verso é literal — não possui interpretação profética.'),
+          content: Text(
+              'Este verso é literal — não possui interpretação profética.'),
           backgroundColor: const Color(0xFF22C55E),
           duration: const Duration(seconds: 2),
         ),
@@ -1376,12 +1866,10 @@ class _VerseCardState extends State<VerseCard> {
       onLongPress: widget.onLongPress,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 500),
-        layoutBuilder: (currentChild, previousChildren) => Stack(
-          children: [
-            ...previousChildren,
-            if (currentChild != null) currentChild,
-          ]
-        ),
+        layoutBuilder: (currentChild, previousChildren) => Stack(children: [
+          ...previousChildren,
+          if (currentChild != null) currentChild,
+        ]),
         transitionBuilder: (Widget child, Animation<double> animation) {
           final rotate = Tween(begin: math.pi, end: 0.0).animate(animation);
           return AnimatedBuilder(
@@ -1394,7 +1882,9 @@ class _VerseCardState extends State<VerseCard> {
               return Transform(
                 transform: Matrix4.rotationX(value),
                 alignment: Alignment.center,
-                child: (value <= (math.pi / 2) || value >= (math.pi * 1.5)) ? child : const SizedBox.shrink(),
+                child: (value <= (math.pi / 2) || value >= (math.pi * 1.5))
+                    ? child
+                    : const SizedBox.shrink(),
               );
             },
           );

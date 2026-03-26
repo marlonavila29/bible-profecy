@@ -16,7 +16,7 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  int _currentIndex = 2; // Start on Bíblia tab
+  int _currentIndex = 0; // Start on Bíblia tab (index 0)
   final GlobalKey<ReaderPageState> _readerKey = GlobalKey<ReaderPageState>();
   final GlobalKey<StudyPageState> _studyKey = GlobalKey<StudyPageState>();
 
@@ -70,9 +70,9 @@ class _HomeShellState extends State<HomeShell> {
       bookIndex: bookIndex,
       chapterIndex: chapterIndex,
       verseNumber: verseNumber,
-      onBackToSearch: () => setState(() => _currentIndex = 0),
+      onBackToSearch: () => setState(() => _currentIndex = 2),
     );
-    setState(() => _currentIndex = 2);
+    setState(() => _currentIndex = 0);
   }
 
   void _onTabChange(int i) {
@@ -93,14 +93,14 @@ class _HomeShellState extends State<HomeShell> {
             child: IndexedStack(
               index: _currentIndex,
               children: [
-                SearchPage(onResultTap: _onSearchResultTap),
-                StudyPage(key: _studyKey, onNavigateToVerse: _onSearchResultTap),
                 ReaderPage(
                   key: _readerKey,
                   onPlayAudio: _playGlobalAudio,
                   onStopAudio: _stopGlobalAudio,
                   isGlobalAudioPlaying: _globalAudioUrl != null,
                 ),
+                StudyPage(key: _studyKey, onNavigateToVerse: _onSearchResultTap),
+                SearchPage(onResultTap: _onSearchResultTap),
                 const SettingsPage(),
               ],
             ),
@@ -136,9 +136,9 @@ class _BottomNav extends StatelessWidget {
     final t = AppTheme();
     final loc = AppLocale();
     final items = [
-      _NavItem(icon: Icons.search_rounded, label: loc.tr_search),
-      _NavItem(icon: Icons.school_rounded, label: loc.tr_studies),
       _NavItem(icon: Icons.menu_book_rounded, label: loc.tr_bible),
+      _NavItem(icon: Icons.school_rounded, label: loc.tr_studies),
+      _NavItem(icon: Icons.search_rounded, label: loc.tr_search),
       _NavItem(icon: Icons.settings_rounded, label: loc.tr_config),
     ];
 

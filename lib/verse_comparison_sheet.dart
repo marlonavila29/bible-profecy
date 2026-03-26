@@ -251,40 +251,53 @@ class _VerseComparisonSheetState extends State<VerseComparisonSheet> {
     showModalBottomSheet(
       context: context,
       backgroundColor: t.surface,
+      isScrollControlled: true,
+      useSafeArea: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) {
         return StatefulBuilder(
           builder: (ctx, setInnerState) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  margin: const EdgeInsets.only(top: 12, bottom: 4),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: t.divider,
-                    borderRadius: BorderRadius.circular(2),
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.6,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              builder: (_, scrollCtrl) => Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 4),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: t.divider,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                  child: Row(
-                    children: [
-                      Text('Selecionar Traduções',
-                          style: GoogleFonts.cinzel(
-                              color: t.titleGold,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold)),
-                    ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                    child: Row(
+                      children: [
+                        Text('Selecionar Traduções',
+                            style: GoogleFonts.cinzel(
+                                color: t.titleGold,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
                   ),
-                ),
-                Divider(color: t.divider),
-                // Group by language
-                ..._buildGroupedVersionList(setInnerState, t),
-                const SizedBox(height: 16),
-              ],
+                  Divider(color: t.divider),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollCtrl,
+                      children: [
+                        ..._buildGroupedVersionList(setInnerState, t),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             );
           },
         );

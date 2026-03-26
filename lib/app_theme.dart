@@ -55,7 +55,7 @@ class AppTheme extends ChangeNotifier {
   // ── Light palette ───────────────────────────────────────
   static const Color _lightBg = Color(0xFFF8F6F1);
   static const Color _lightSurface = Color(0xFFFFFFFF);
-  static const Color _lightAppBar = Color(0xFFFAF8F5);
+  static const Color _lightAppBar = Color(0xFFEDE9E3);
 
   // Backgrounds
   Color get bg => _isDark ? _darkBg : _lightBg;

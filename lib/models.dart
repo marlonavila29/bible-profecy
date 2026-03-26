@@ -61,8 +61,9 @@ class Comment {
 class DictEntry {
   final String meaning;
   final String? originalWord;
+  final List<String> references;
 
-  DictEntry({required this.meaning, this.originalWord});
+  DictEntry({required this.meaning, this.originalWord, this.references = const []});
 
   factory DictEntry.fromJson(dynamic json) {
     if (json is String) {
@@ -71,6 +72,9 @@ class DictEntry {
       return DictEntry(
         meaning: json['meaning'] ?? '',
         originalWord: json['originalWord'],
+        references: json['references'] is List
+            ? List<String>.from((json['references'] as List).map((e) => e.toString()))
+            : [],
       );
     }
     return DictEntry(meaning: '');
@@ -80,6 +84,7 @@ class DictEntry {
     return {
       'meaning': meaning,
       if (originalWord != null && originalWord!.isNotEmpty) 'originalWord': originalWord,
+      if (references.isNotEmpty) 'references': references,
     };
   }
 }

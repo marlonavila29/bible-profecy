@@ -4,6 +4,7 @@ import 'app_theme.dart';
 import 'app_locale.dart';
 import 'services.dart';
 import 'bible_version_service.dart';
+import 'auth_service.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -328,7 +329,10 @@ class _SettingsPageState extends State<SettingsPage> {
             // ── Bible Version Selector ──
             _BibleVersionTile(onRefresh: () => setState(() {})),
 
-
+            const SizedBox(height: 28),
+            // ── Account Section ──
+            _SectionHeader(title: 'Conta'),
+            _buildAccountSection(t),
 
             const SizedBox(height: 40),
             Center(
@@ -340,6 +344,165 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAccountSection(AppTheme t) {
+    final auth = AuthService();
+    final isLoggedIn = auth.isLoggedIn;
+    final user = auth.firebaseUser;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: t.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.border),
+      ),
+      child: Column(
+        children: [
+          if (isLoggedIn) ...[
+            Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppTheme.accent.withOpacity(0.15),
+                  ),
+                  child: Center(
+                    child: Text(
+                      (user?.displayName ?? user?.email ?? '?')[0].toUpperCase(),
+                      style: GoogleFonts.cinzel(
+                          color: AppTheme.accent,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        user?.displayName ?? 'Usuário',
+                        style: GoogleFonts.inter(
+                            color: t.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500),
+                      ),
+                      if (user?.email != null)
+                        Text(
+                          user!.email!,
+                          style: GoogleFonts.inter(
+                              color: t.textQuaternary, fontSize: 12),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: t.surface,
+                      title: Text('Sair da conta?',
+                          style: GoogleFonts.cinzel(color: t.titleGold)),
+                      content: Text(
+                          'Suas anotações salvas na nuvem continuarão disponíveis quando você fizer login novamente.',
+                          style: TextStyle(color: t.textSecondary)),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: Text('Cancelar',
+                              style: TextStyle(color: t.textTertiary)),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Sair',
+                              style: TextStyle(color: Colors.redAccent)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    await AuthService().logout();
+                  }
+                },
+                icon: const Icon(Icons.logout_rounded,
+                    color: Colors.redAccent, size: 18),
+                label: Text('Sair da conta',
+                    style: GoogleFonts.inter(
+                        color: Colors.redAccent, fontSize: 14)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.redAccent),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ] else if (auth.isGuestMode) ...[
+            Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: t.isDark ? Colors.white12 : Colors.black12,
+                  ),
+                  child: Icon(Icons.person_outline,
+                      color: t.textTertiary, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Modo Convidado',
+                          style: GoogleFonts.inter(
+                              color: t.textPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500)),
+                      Text('Dados salvos apenas localmente',
+                          style: GoogleFonts.inter(
+                              color: t.textQuaternary, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  AuthService().isGuestMode = false;
+                  // This will be caught by the StreamBuilder in main.dart
+                  // and navigate back to login page
+                  Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
+                },
+                icon: const Icon(Icons.login_rounded, size: 18),
+                label: Text('Criar conta / Login',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.accent,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -376,12 +539,13 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppTheme();
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Text(
         title.toUpperCase(),
         style: GoogleFonts.inter(
-          color: AppTheme.accent.withOpacity(0.8),
+          color: t.titleGold,
           fontSize: 11,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.4,

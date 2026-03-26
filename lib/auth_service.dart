@@ -1,7 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'dart:convert';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'app_error.dart';
 
 class AppUser {
@@ -189,6 +193,74 @@ class AuthService {
       _log('Google login unknown error: $e\n$st');
       return AppErrorHandler.translate(e);
     }
+  }
+
+  /// Login with Apple
+  Future<String?> loginWithApple() async {
+    try {
+      if (kIsWeb) {
+        // Web: use Firebase OAuthProvider popup
+        final appleProvider = OAuthProvider('apple.com')
+          ..addScope('email')
+          ..addScope('name');
+        final userCredential = await _auth.signInWithPopup(appleProvider);
+        if (userCredential.user != null) {
+          await _createOrUpdateUser(userCredential.user!);
+        }
+        return null;
+      } else {
+        // iOS/macOS: use native Apple Sign In
+        final rawNonce = _generateNonce();
+        final nonce = _sha256ofString(rawNonce);
+
+        final appleCredential = await SignInWithApple.getAppleIDCredential(
+          scopes: [
+            AppleIDAuthorizationScopes.email,
+            AppleIDAuthorizationScopes.fullName,
+          ],
+          nonce: nonce,
+        );
+
+        final oauthCredential = OAuthProvider('apple.com').credential(
+          idToken: appleCredential.identityToken,
+          rawNonce: rawNonce,
+        );
+
+        final userCredential = await _auth.signInWithCredential(oauthCredential);
+        if (userCredential.user != null) {
+          // Apple only sends name on first sign-in
+          final name = appleCredential.givenName != null
+              ? '${appleCredential.givenName} ${appleCredential.familyName ?? ''}'.trim()
+              : null;
+          await _createOrUpdateUser(userCredential.user!, name: name);
+        }
+        return null;
+      }
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) return null; // user cancelled
+      _log('Apple login auth error: ${e.code}, ${e.message}');
+      return 'Erro ao fazer login com Apple: ${e.message}';
+    } on FirebaseAuthException catch (e) {
+      _log('Apple login FirebaseAuthException: code=${e.code}, message=${e.message}');
+      return AppErrorHandler.translate(e);
+    } catch (e, st) {
+      _log('Apple login unknown error: $e\n$st');
+      return AppErrorHandler.translate(e);
+    }
+  }
+
+  /// Generate a random nonce for Apple Sign In
+  String _generateNonce([int length = 32]) {
+    const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    final random = Random.secure();
+    return List.generate(length, (_) => charset[random.nextInt(charset.length)]).join();
+  }
+
+  /// SHA256 hash of a string
+  String _sha256ofString(String input) {
+    final bytes = utf8.encode(input);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
   }
 
   /// Logout

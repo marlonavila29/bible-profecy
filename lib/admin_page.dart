@@ -718,11 +718,12 @@ class _AdminPageState extends State<AdminPage>
                                 ))
                             .toList(),
                         onChanged: (v) {
-                          if (v != null)
+                          if (v != null) {
                             setState(() {
                               _audioSelBook = v;
                               _audioSelChap = 0;
                             });
+                          }
                           _loadCurrentChapterAudio();
                         },
                       ),
@@ -897,9 +898,10 @@ class _AdminPageState extends State<AdminPage>
                           onPressed: () async {
                             await DataService().removePodcast(e.key);
                             setState(() {});
-                            if (mounted)
+                            if (mounted) {
                               AppFeedback.showSuccess(
                                   context, 'Podcast removido!');
+                            }
                           },
                         ),
                       ),
@@ -1126,8 +1128,9 @@ class _AdminPageState extends State<AdminPage>
     final url = _podUrlCtrl.text.trim();
     final desc = _podDescCtrl.text.trim();
     if (title.isEmpty || url.isEmpty) {
-      if (mounted)
+      if (mounted) {
         AppFeedback.showError(context, 'Título e URL são obrigatórios.');
+      }
       return;
     }
     await DataService().savePodcast(title, url, desc);
@@ -1251,8 +1254,9 @@ class _AdminPageState extends State<AdminPage>
 
       Uint8List uploadBytes;
       if (kIsWeb) {
-        if (mounted)
+        if (mounted) {
           AppFeedback.showSuccess(context, 'Comprimindo imagem localmente...');
+        }
         uploadBytes = await compressImageWeb(file.bytes!,
             maxDimension: 1024, quality: 0.85);
       } else {

@@ -75,6 +75,16 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> _loginApple() async {
+    setState(() => _isLoading = true);
+    final error = await AuthService().loginWithApple();
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (error != null) {
+      AppFeedback.showError(context, error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -273,22 +283,24 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
 
-                  // Apple Sign-In Button (future)
-                  // SizedBox(
-                  //   height: 52,
-                  //   width: double.infinity,
-                  //   child: OutlinedButton.icon(
-                  //     onPressed: _isLoading ? null : _loginApple,
-                  //     icon: const Icon(Icons.apple, color: Colors.white),
-                  //     label: const Text('Continuar com Apple', style: TextStyle(color: Colors.white, fontSize: 15)),
-                  //     style: OutlinedButton.styleFrom(
-                  //       side: const BorderSide(color: Colors.white24),
-                  //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  //     ),
-                  //   ),
-                  // ),
+                  // Apple Sign-In Button
+                  SizedBox(
+                    height: 52,
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _isLoading ? null : _loginApple,
+                      icon: const Icon(Icons.apple, color: Colors.white, size: 24),
+                      label: const Text('Continuar com Apple',
+                          style: TextStyle(color: Colors.white, fontSize: 15)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white24),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
 
                   // ── Guest Mode ────────────────────────────────────
                   if (widget.onGuestMode != null) ...[
