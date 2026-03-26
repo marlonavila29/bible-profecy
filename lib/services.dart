@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
+import 'firestore_service.dart';
+import 'api_service.dart';
+import 'app_locale.dart';
 
 class DataService {
   static final DataService _instance = DataService._internal();
@@ -12,133 +15,252 @@ class DataService {
   Map<String, DictEntry> dictionary = {};
   Map<String, VerseOptions> verseOptions = {};
   Map<String, UserVerseData> userVerseData = {};
+  Map<String, String> chapterAudio = {};
+  List<Map<String, String>> podcasts = [];
+  Set<String> literalVerses = {}; // keys: "BookName_chapter_verse"
   SharedPreferences? _prefs;
 
   Future<void> init() async {
-    // 1. Load Bible
-    final String response = await rootBundle.loadString('assets/bible-data.json');
+    // 1. Load Bible from locale-specific asset (fallback to Portuguese)
+    final bibleAsset = AppLocale().current.bibleAsset;
+    String response;
+    try {
+      response = await rootBundle.loadString(bibleAsset);
+    } catch (_) {
+      // Fallback to Portuguese if translation file doesn't exist yet
+      response = await rootBundle.loadString('assets/bible-data.json');
+    }
     final List<dynamic> data = json.decode(response);
-    
     books = data.map((b) => Book.fromJson(b)).toList();
-    // Ensure Daniel comes first if they were out of order
     books.sort((a, b) => a.name == 'Daniel' ? -1 : 1);
 
-    // 2. Load Dictionary
     _prefs = await SharedPreferences.getInstance();
-    final String dictString = _prefs?.getString('dictionary') ?? '{}';
-    final Map<String, dynamic> rawDict = json.decode(dictString);
-    dictionary = {};
-    rawDict.forEach((key, value) {
-      dictionary[key] = DictEntry.fromJson(value);
-    });
 
-    // 3. Load Verse Options
-    final String optsString = _prefs?.getString('verseOptions') ?? '{}';
+    // 2. Load Local Data First (Instant)
+    _loadDictFromPrefs();
+    _loadOptsFromPrefs();
+    _loadUserDataFromPrefs();
+    _loadChapterAudioFromPrefs();
+    _loadPodcastsFromPrefs();
+
+    // 3. Try Firestore first (fast, 4s timeout)
+    bool firestoreWorked = false;
     try {
-      final Map<String, dynamic> rawOpts = json.decode(optsString);
-      verseOptions = {};
-      rawOpts.forEach((key, value) {
-        if (value is Map<String, dynamic>) {
-          verseOptions[key] = VerseOptions.fromJson(value);
-        }
-      });
+      final fs = FirestoreService();
+      await Future.wait([
+        fs.loadDictionary().then((remote) {
+          if (remote.isNotEmpty) {
+            dictionary = remote;
+            _saveDictToPrefs();
+            firestoreWorked = true;
+          }
+        }).catchError((_) {}),
+        
+        fs.loadVerseOptions().then((remote) {
+          if (remote.isNotEmpty) {
+            verseOptions = remote;
+            _saveOptsToPrefs();
+            firestoreWorked = true;
+          }
+        }).catchError((_) {}),
+        
+        fs.loadChapterAudio().then((remote) {
+          if (remote.isNotEmpty) {
+            chapterAudio = remote;
+            _saveChapterAudioToPrefs();
+            firestoreWorked = true;
+          }
+        }).catchError((_) {}),
+        
+        fs.loadPodcasts().then((remote) {
+          if (remote.isNotEmpty) {
+            podcasts = remote;
+            _savePodcastsToPrefs();
+            firestoreWorked = true;
+          }
+        }).catchError((_) {}),
+
+        fs.loadLiteralVerses().then((remote) {
+          if (remote.isNotEmpty) {
+            literalVerses = remote;
+            firestoreWorked = true;
+          }
+        }).catchError((_) {}),
+
+      ]).timeout(const Duration(seconds: 4));
     } catch (e) {
-      verseOptions = {};
+      print('[DataService] Firestore sync timed out: $e');
     }
 
-    // 4. Load User Verse Data
-    final String usrOptsString = _prefs?.getString('userVerseData') ?? '{}';
-    try {
-      final Map<String, dynamic> rawUsrOpts = json.decode(usrOptsString);
-      userVerseData = {};
-      rawUsrOpts.forEach((key, value) {
-        if (value is Map<String, dynamic>) {
-          userVerseData[key] = UserVerseData.fromJson(value);
+    // 4. If Firestore didn't return data, fallback to REST API (backend on Render)
+    if (!firestoreWorked) {
+      print('[DataService] Firestore empty/blocked. Trying REST API fallback...');
+      try {
+        final api = ApiService();
+        final results = await Future.wait([
+          api.loadDictionary().catchError((_) => <String, DictEntry>{}),
+          api.loadVerseOptions().catchError((_) => <String, VerseOptions>{}),
+          api.loadChapterAudio().catchError((_) => <String, String>{}),
+          api.loadPodcasts().catchError((_) => <Map<String, String>>[]),
+          api.loadLiteralVerses().catchError((_) => <String>{}),
+        ]).timeout(const Duration(seconds: 90));
+
+        final remoteDictionary = results[0] as Map<String, DictEntry>;
+        final remoteVerseOptions = results[1] as Map<String, VerseOptions>;
+        final remoteChapterAudio = results[2] as Map<String, String>;
+        final remotePodcasts = results[3] as List<Map<String, String>>;
+        final remoteLiterals = results[4] as Set<String>;
+
+        if (remoteDictionary.isNotEmpty) {
+          dictionary = remoteDictionary;
+          _saveDictToPrefs();
         }
-      });
-    } catch (e) {
-      userVerseData = {};
+        if (remoteVerseOptions.isNotEmpty) {
+          verseOptions = remoteVerseOptions;
+          _saveOptsToPrefs();
+        }
+        if (remoteChapterAudio.isNotEmpty) {
+          chapterAudio = remoteChapterAudio;
+          _saveChapterAudioToPrefs();
+        }
+        if (remotePodcasts.isNotEmpty) {
+          podcasts = remotePodcasts;
+          _savePodcastsToPrefs();
+        }
+        if (remoteLiterals.isNotEmpty) {
+          literalVerses = remoteLiterals;
+        }
+        print('[DataService] REST API fallback loaded successfully.');
+      } catch (e) {
+        print('[DataService] REST API fallback also failed: $e. Using local cache.');
+      }
     }
   }
 
-  Future<void> saveDictionaryWord(String word, String meaning, [String? originalWord]) async {
-    final cleanWord = word.trim().toLowerCase();
-    dictionary[cleanWord] = DictEntry(meaning: meaning.trim(), originalWord: originalWord?.trim().isNotEmpty == true ? originalWord!.trim() : null);
-    await _saveToPrefs();
-  }
 
-  Future<void> removeDictionaryWord(String word) async {
-    final cleanWord = word.trim().toLowerCase();
-    dictionary.remove(cleanWord);
-    await _saveToPrefs();
-  }
 
-  Future<void> saveVerseOptions(String key, VerseOptions opts) async {
-    verseOptions[key] = opts;
-    await _saveOptsToPrefs();
-  }
+  // ─── Chapter Audio (local + future cloud) ───────────────────────────────────
 
-  Future<void> removeVerseOptions(String key) async {
-    verseOptions.remove(key);
-    await _saveOptsToPrefs();
-  }
+  /// key = "BookName_chapterIndex", e.g. "Daniel_0"
+  String chapterAudioKey(String bookName, int chapterIndex) =>
+      '${bookName}_$chapterIndex';
+
+
+
+  String? getChapterAudio(String bookName, int chapterIndex) =>
+      chapterAudio[chapterAudioKey(bookName, chapterIndex)];
+
+  // ─── Literal Verses ──────────────────────────────────────────────────────────
+
+  String literalVerseKey(String bookName, int chapter, int verse) =>
+      '${bookName}_${chapter}_$verse';
+
+  bool isVerseLiteral(String bookName, int chapter, int verse) =>
+      literalVerses.contains(literalVerseKey(bookName, chapter, verse));
+
+
+
+  // ─── User Verse Data (local only) ───────────────────────────────────────────
 
   Future<void> saveUserVerseData(String key, UserVerseData data) async {
     userVerseData[key] = data;
-    await _saveUserOptsToPrefs();
+    await _saveUserDataToPrefs();
   }
 
   Future<void> removeUserVerseData(String key) async {
     userVerseData.remove(key);
-    await _saveUserOptsToPrefs();
+    await _saveUserDataToPrefs();
   }
 
-  Future<void> _saveToPrefs() async {
-    final encoded = json.encode(dictionary.map((k, v) => MapEntry(k, v.toJson())));
+
+
+  // ─── Private: LocalPrefs helpers ─────────────────────────────────────────────
+
+  void _loadDictFromPrefs() {
+    try {
+      final s = _prefs?.getString('dictionary') ?? '{}';
+      final raw = json.decode(s) as Map<String, dynamic>;
+      dictionary = {};
+      raw.forEach((k, v) => dictionary[k] = DictEntry.fromJson(v));
+    } catch (_) {
+      dictionary = {};
+    }
+  }
+
+  void _loadOptsFromPrefs() {
+    try {
+      final s = _prefs?.getString('verseOptions') ?? '{}';
+      final raw = json.decode(s) as Map<String, dynamic>;
+      verseOptions = {};
+      raw.forEach((k, v) {
+        if (v is Map<String, dynamic>) {
+          verseOptions[k] = VerseOptions.fromJson(v);
+        }
+      });
+    } catch (_) {
+      verseOptions = {};
+    }
+  }
+
+  void _loadUserDataFromPrefs() {
+    try {
+      final s = _prefs?.getString('userVerseData') ?? '{}';
+      final raw = json.decode(s) as Map<String, dynamic>;
+      userVerseData = {};
+      raw.forEach((k, v) {
+        if (v is Map<String, dynamic>) {
+          userVerseData[k] = UserVerseData.fromJson(v);
+        }
+      });
+    } catch (_) {
+      userVerseData = {};
+    }
+  }
+
+  Future<void> _saveDictToPrefs() async {
+    final encoded =
+        json.encode(dictionary.map((k, v) => MapEntry(k, v.toJson())));
     await _prefs?.setString('dictionary', encoded);
   }
 
   Future<void> _saveOptsToPrefs() async {
-    final encoded = json.encode(verseOptions.map((k, v) => MapEntry(k, v.toJson())));
+    final encoded =
+        json.encode(verseOptions.map((k, v) => MapEntry(k, v.toJson())));
     await _prefs?.setString('verseOptions', encoded);
   }
 
-  Future<void> _saveUserOptsToPrefs() async {
-    final encoded = json.encode(userVerseData.map((k, v) => MapEntry(k, v.toJson())));
+  Future<void> _saveUserDataToPrefs() async {
+    final encoded =
+        json.encode(userVerseData.map((k, v) => MapEntry(k, v.toJson())));
     await _prefs?.setString('userVerseData', encoded);
   }
-
-  String exportAll() {
-    final Map<String, dynamic> combined = {
-      'dictionary': dictionary.map((k, v) => MapEntry(k, v.toJson())),
-      'verseOptions': verseOptions.map((k, v) => MapEntry(k, v.toJson())),
-      'userVerseData': userVerseData.map((k, v) => MapEntry(k, v.toJson())),
-    };
-    return json.encode(combined);
+  Future<void> _saveChapterAudioToPrefs() async {
+    final encoded = json.encode(chapterAudio);
+    await _prefs?.setString('chapterAudio', encoded);
   }
 
-  Future<void> importAll(String jsonData) async {
-    final Map<String, dynamic> combined = json.decode(jsonData);
-    
-    if (combined.containsKey('dictionary')) {
-      final Map<String, dynamic> rawDict = combined['dictionary'];
-      dictionary = {};
-      rawDict.forEach((key, value) {
-        dictionary[key] = DictEntry.fromJson(value);
-      });
-      await _saveToPrefs();
+  void _loadChapterAudioFromPrefs() {
+    try {
+      final s = _prefs?.getString('chapterAudio') ?? '{}';
+      final raw = json.decode(s) as Map<String, dynamic>;
+      chapterAudio = raw.map((k, v) => MapEntry(k, v.toString()));
+    } catch (_) {
+      chapterAudio = {};
     }
-    
-    if (combined.containsKey('verseOptions')) {
-      final Map<String, dynamic> rawOpts = combined['verseOptions'];
-      verseOptions = rawOpts.map((key, value) => MapEntry(key, VerseOptions.fromJson(value)));
-      await _saveOptsToPrefs();
-    }
-    
-    if (combined.containsKey('userVerseData')) {
-      final Map<String, dynamic> rawUsrOpts = combined['userVerseData'];
-      userVerseData = rawUsrOpts.map((key, value) => MapEntry(key, UserVerseData.fromJson(value)));
-      await _saveUserOptsToPrefs();
+  }
+
+  Future<void> _savePodcastsToPrefs() async {
+    final encoded = json.encode(podcasts);
+    await _prefs?.setString('podcasts', encoded);
+  }
+
+  void _loadPodcastsFromPrefs() {
+    try {
+      final s = _prefs?.getString('podcasts') ?? '[]';
+      final raw = json.decode(s) as List<dynamic>;
+      podcasts = raw.map((e) => Map<String, String>.from(e as Map)).toList();
+    } catch (_) {
+      podcasts = [];
     }
   }
 }

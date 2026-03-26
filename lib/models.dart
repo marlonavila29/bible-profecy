@@ -134,13 +134,15 @@ class VerseOptions {
 class UserVerseData {
   final int? highlightColor;
   final String? personalNote;
+  final bool isFavorite;
 
-  UserVerseData({this.highlightColor, this.personalNote});
+  UserVerseData({this.highlightColor, this.personalNote, this.isFavorite = false});
 
   factory UserVerseData.fromJson(Map<String, dynamic> json) {
     return UserVerseData(
       highlightColor: json['highlightColor'],
       personalNote: json['personalNote'],
+      isFavorite: json['isFavorite'] ?? false,
     );
   }
 
@@ -148,6 +150,15 @@ class UserVerseData {
     return {
       if (highlightColor != null) 'highlightColor': highlightColor,
       if (personalNote != null) 'personalNote': personalNote,
+      if (isFavorite) 'isFavorite': isFavorite,
     };
+  }
+
+  UserVerseData copyWith({int? highlightColor, String? personalNote, bool? isFavorite, bool clearHighlight = false}) {
+    return UserVerseData(
+      highlightColor: clearHighlight ? null : (highlightColor ?? this.highlightColor),
+      personalNote: personalNote ?? this.personalNote,
+      isFavorite: isFavorite ?? this.isFavorite,
+    );
   }
 }

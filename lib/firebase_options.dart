@@ -52,7 +52,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '30168724989',
     projectId: 'bible-profecy',
     authDomain: 'bible-profecy.firebaseapp.com',
-    storageBucket: 'bible-profecy.firebasestorage.app',
+    storageBucket: 'bible-profecy-32928.firebasestorage.app',
     measurementId: 'G-7N0352G9T3',
   );
 
@@ -61,7 +61,7 @@ class DefaultFirebaseOptions {
     appId: '1:30168724989:android:2a206fb199db17b1131594',
     messagingSenderId: '30168724989',
     projectId: 'bible-profecy',
-    storageBucket: 'bible-profecy.firebasestorage.app',
+    storageBucket: 'bible-profecy-32928.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
@@ -69,7 +69,7 @@ class DefaultFirebaseOptions {
     appId: '1:30168724989:ios:34a531553d58476f131594',
     messagingSenderId: '30168724989',
     projectId: 'bible-profecy',
-    storageBucket: 'bible-profecy.firebasestorage.app',
+    storageBucket: 'bible-profecy-32928.firebasestorage.app',
     iosBundleId: 'com.wmma.bibleProfecy',
   );
 }

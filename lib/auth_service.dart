@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'app_error.dart';
 
 class AppUser {
   final String uid;
@@ -49,21 +51,42 @@ class AuthService {
 
   AppUser? currentUser;
 
+  /// Guest mode: user skipped login. Can read the app but cannot sync/admin.
+  bool isGuestMode = false;
+
+  /// Simple in‑memory log for debugging (can be displayed in a debug screen later)
+  final List<String> _errorLog = [];
+  void _log(String msg) {
+    final timestamp = DateTime.now().toIso8601String();
+    _errorLog.add('[$timestamp] $msg');
+    debugPrint('[AUTH LOG] $msg');
+  }
+
+  List<String> get errorLog => List.unmodifiable(_errorLog);
+
   User? get firebaseUser => _auth.currentUser;
   bool get isLoggedIn => _auth.currentUser != null;
+
+  /// True if user can access the app (logged in or guest mode)
+  bool get canUseApp => isLoggedIn || isGuestMode;
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   /// Load user profile from Firestore
   Future<AppUser?> loadUserProfile() async {
-    final user = _auth.currentUser;
-    if (user == null) return null;
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return null;
 
-    final doc = await _firestore.collection('users').doc(user.uid).get();
-    if (doc.exists) {
-      currentUser = AppUser.fromFirestore(doc.data()!, user.uid);
+      final doc = await _firestore.collection('users').doc(user.uid).get();
+      if (doc.exists) {
+        currentUser = AppUser.fromFirestore(doc.data()!, user.uid);
+      }
+      return currentUser;
+    } catch (e) {
+      // Non-blocking: just return null if profile load fails
+      return null;
     }
-    return currentUser;
   }
 
   /// Create or update user document in Firestore
@@ -72,7 +95,6 @@ class AuthService {
     final doc = await docRef.get();
 
     if (!doc.exists) {
-      // New user: determine role
       final role = user.email?.toLowerCase() == masterEmail ? 'master' : 'user';
       final userData = {
         'email': user.email ?? '',
@@ -83,7 +105,6 @@ class AuthService {
       await docRef.set(userData);
       currentUser = AppUser.fromFirestore(userData, user.uid);
     } else {
-      // Existing user: update last login
       await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
       currentUser = AppUser.fromFirestore(doc.data()!, user.uid);
     }
@@ -93,27 +114,20 @@ class AuthService {
   Future<String?> registerWithEmail(String email, String password, String name) async {
     try {
       final credential = await _auth.createUserWithEmailAndPassword(
-        email: email,
+        email: email.trim(),
         password: password,
       );
       if (credential.user != null) {
-        await credential.user!.updateDisplayName(name);
-        await _createOrUpdateUser(credential.user!, name: name);
+        await credential.user!.updateDisplayName(name.trim());
+        await _createOrUpdateUser(credential.user!, name: name.trim());
       }
       return null; // success
     } on FirebaseAuthException catch (e) {
-      switch (e.code) {
-        case 'weak-password':
-          return 'A senha é muito fraca. Use pelo menos 6 caracteres.';
-        case 'email-already-in-use':
-          return 'Este e-mail já está cadastrado.';
-        case 'invalid-email':
-          return 'E-mail inválido.';
-        default:
-          return 'Erro ao cadastrar: ${e.message}';
-      }
-    } catch (e) {
-      return 'Erro inesperado: $e';
+      _log('Register FirebaseAuthException: code=${e.code}, message=${e.message}');
+      return AppErrorHandler.translate(e);
+    } catch (e, st) {
+      _log('Register unknown error: $e\\n$st');
+      return AppErrorHandler.translate(e);
     }
   }
 
@@ -121,7 +135,7 @@ class AuthService {
   Future<String?> loginWithEmail(String email, String password) async {
     try {
       final credential = await _auth.signInWithEmailAndPassword(
-        email: email,
+        email: email.trim(),
         password: password,
       );
       if (credential.user != null) {
@@ -129,49 +143,59 @@ class AuthService {
       }
       return null; // success
     } on FirebaseAuthException catch (e) {
-      switch (e.code) {
-        case 'user-not-found':
-          return 'Usuário não encontrado.';
-        case 'wrong-password':
-          return 'Senha incorreta.';
-        case 'invalid-email':
-          return 'E-mail inválido.';
-        case 'invalid-credential':
-          return 'Credenciais inválidas. Verifique e-mail e senha.';
-        default:
-          return 'Erro ao entrar: ${e.message}';
-      }
-    } catch (e) {
-      return 'Erro inesperado: $e';
+      _log('Login FirebaseAuthException: code=${e.code}, message=${e.message}');
+      return AppErrorHandler.translate(e);
+    } catch (e, st) {
+      _log('Login unknown error: $e\\n$st');
+      return AppErrorHandler.translate(e);
     }
   }
 
   /// Login with Google
   Future<String?> loginWithGoogle() async {
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn();
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-      if (googleUser == null) return 'Login cancelado.';
+      if (kIsWeb) {
+        // Firebase native popup for web (more stable)
+        final googleProvider = GoogleAuthProvider();
+        final userCredential = await _auth.signInWithPopup(googleProvider);
+        if (userCredential.user != null) {
+          await _createOrUpdateUser(userCredential.user!);
+        }
+        return null;
+      } else {
+        // Mobile (iOS/Android)
+        final GoogleSignIn googleSignIn = GoogleSignIn(
+          clientId: '732137771699-ac4meas0eb134o2ci477c4nnjqjbp924.apps.googleusercontent.com',
+        );
+        final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+        if (googleUser == null) return null; // User cancelled – not an error
 
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
+        final googleAuth = await googleUser.authentication;
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
 
-      final userCredential = await _auth.signInWithCredential(credential);
-      if (userCredential.user != null) {
-        await _createOrUpdateUser(userCredential.user!);
+        final userCredential = await _auth.signInWithCredential(credential);
+        if (userCredential.user != null) {
+          await _createOrUpdateUser(userCredential.user!);
+        }
+        return null;
       }
-      return null; // success
-    } catch (e) {
-      return 'Erro ao entrar com Google: $e';
+    } on FirebaseAuthException catch (e) {
+      _log('Google login FirebaseAuthException: code=${e.code}, message=${e.message}');
+      return AppErrorHandler.translate(e);
+    } catch (e, st) {
+      _log('Google login unknown error: $e\n$st');
+      return AppErrorHandler.translate(e);
     }
   }
 
   /// Logout
   Future<void> logout() async {
-    try { await GoogleSignIn().signOut(); } catch (_) {}
+    try {
+      await GoogleSignIn().signOut();
+    } catch (_) {}
     await _auth.signOut();
     currentUser = null;
   }
@@ -179,18 +203,24 @@ class AuthService {
   /// Update user role (only master can do this)
   Future<void> updateUserRole(String uid, String newRole) async {
     if (currentUser?.isMaster != true) return;
-    await _firestore.collection('users').doc(uid).update({'role': newRole});
+    try {
+      await _firestore.collection('users').doc(uid).update({'role': newRole});
+    } catch (_) {}
   }
 
   /// Get all users (for master admin)
   Future<List<AppUser>> getAllUsers() async {
-    final snapshot = await _firestore
-        .collection('users')
-        .orderBy('createdAt', descending: true)
-        .get();
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .orderBy('createdAt', descending: true)
+          .get();
 
-    return snapshot.docs
-        .map((doc) => AppUser.fromFirestore(doc.data(), doc.id))
-        .toList();
+      return snapshot.docs
+          .map((doc) => AppUser.fromFirestore(doc.data(), doc.id))
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 }
